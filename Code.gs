@@ -9,12 +9,22 @@ function getWebAppUrl() {
 /**
  * HTMLテンプレート内から共通パーツ（Style.html, Header.htmlなど）を
  * 読み込むためのヘルパー関数。
- * 使い方: <?!= include('Style'); ?>
+ * テンプレート変数（url, activePage, pageTitleなど）は明示的に
+ * オブジェクトとして渡す。
+ * 使い方: <?!= include('Header', {url: url, activePage: activePage, pageTitle: pageTitle}); ?>
  * @param {string} filename 読み込むHTMLファイル名（拡張子なし）。
+ * @param {object} vars テンプレートに渡す変数のオブジェクト（省略可）。
  * @return {string} 評価済みのHTML文字列。
  */
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+function include(filename, vars) {
+  var tmpl = HtmlService.createTemplateFromFile(filename);
+  vars = vars || {};
+  for (var key in vars) {
+    if (Object.prototype.hasOwnProperty.call(vars, key)) {
+      tmpl[key] = vars[key];
+    }
+  }
+  return tmpl.evaluate().getContent();
 }
 
 /**
@@ -52,8 +62,15 @@ function doGet(e) {
     }
   }
 
+  var appUrl = ScriptApp.getService().getUrl();
+  // 末尾に "/" が付いている場合、"?page=xxx" と連結すると
+  // "/?" のような不正なURLになりリンク切れの原因になるため正規化する
+  if (appUrl && appUrl.charAt(appUrl.length - 1) === "/") {
+    appUrl = appUrl.slice(0, -1);
+  }
+
   var html = HtmlService.createTemplateFromFile(page);
-  html.url = ScriptApp.getService().getUrl();
+  html.url = appUrl;
   html.activePage = page;
   html.pageTitle = getPageTitle(page);
 

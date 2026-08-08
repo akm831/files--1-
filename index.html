@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <title><?= pageTitle ?></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <?!= include('Style'); ?>
+  </head>
+  <body>
+    <?!= include('Header'); ?>
+
+    <main class="app-shell">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="bi bi-sliders"></i> 出題設定
+          </h5>
+          <div class="row g-2 mt-1">
+            <div class="col-md">
+              <label class="form-label">対象シート</label>
+              <select id="sheetSelect" class="form-select"></select>
+            </div>
+            <div class="col-md">
+              <label class="form-label">出題モード</label>
+              <select id="prioritySelect" class="form-select">
+                <option value="">通常出題</option>
+                <option value="bookmark">ブックマークした問題</option>
+                <option value="mistake">苦手問題（2回以上ミス）</option>
+                <option value="unanswered">未出題のみ</option>
+                <option value="lowrate">正答率60%以下</option>
+              </select>
+            </div>
+          </div>
+          <div id="genreBar" class="mt-2" style="display: none">
+            <label class="form-label">ジャンル</label>
+            <select id="genreSelect" class="form-select"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-body text-center" id="questionBox">
+          <div class="text-secondary py-4">
+            <i class="bi bi-hourglass-split fs-3"></i>
+            <p class="mb-0 mt-2">読み込み中…</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="result" class="mb-4"></div>
+
+      <div class="card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+              <i class="bi bi-bar-chart-line"></i> シート別 正答率
+            </h5>
+            <button
+              class="btn btn-sm btn-outline-primary"
+              onclick="showStats()"
+            >
+              <i class="bi bi-arrow-clockwise"></i> 更新
+            </button>
+          </div>
+          <div id="stats" class="mt-3"></div>
+        </div>
+      </div>
+    </main>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      const STATS_UPDATE_INTERVAL = 10;
+      let currentSheet = null;
+      let allQuestions = [];
+      let questionData = null;
+      let questionStats = {};
+      let answerCount = 0;
+
+      window.onload = function () {
+        loadSheets();
+        showStats();
+      };
+
+      function loadSheets() {
+        google.script.run
+          .withSuccessHandler((names) => {
+            const sel = document.getElementById("sheetSelect");
+            sel.innerHTML = "";
+            names.forEach((name) => {
+              const opt = document.createElement("option");
+              opt.value = name;
+              opt.textContent = name;
+              sel.appendChild(opt);
+            });
+            currentSheet = sel.value;
+            sel.onchange = onSheetChange;
+            document.getElementById("prioritySelect").onchange =
+              loadAllQuestions;
+            onSheetChange();
+          })
+          .withFailureHandler(showLoadError)
+          .getSheetNames();
+      }
+
+      function showLoadError(error) {
+        document.getElementById(
+          "questionBox"
+        ).innerHTML = `<div class="alert alert-danger mb-0">読み込みに失敗しました：${error.message}</div>`;
+      }
+
+      function onSheetChange() {
+        currentSheet = document.getElementById("sheetSelect").value;
+        handleGenreSelector();
+        loadAllQuestions();
+      }
+
+      function handleGenreSelector() {
+        const genreBar = document.getElementById("genreBar");
+        const genreSel = document.getElementById("genreSelect");
+        const sheetsWithGenre = ["地方自治法", "地方公務員法"];
+        if (sheetsWithGenre.includes(currentSheet)) {
+          genreBar.style.display = "block";
+          google.script.run
+            .withSuccessHandler((genres) => {
+              genreSel.innerHTML = "";
+              genres.forEach((genre) => {
+                const opt = new Option(genre, genre);
+                genreSel.add(opt);
+              });
+              genreSel.onchange = loadAllQuestions;
+            })
+            .withFailureHandler(showLoadError)
+            .getGenres(currentSheet);
+        } else {
+          genreBar.style.display = "none";
+        }
+      }
+
+      function loadAllQuestions() {
+        document.getElementById("result").innerHTML = "";
+        let genre = null;
+        if (document.getElementById("genreBar").style.display === "block") {
+          genre = document.getElementById("genreSelect").value;
+        }
+        const priority = document.getElementById("prioritySelect").value;
+
+        if (priority === "bookmark") {
+          google.script.run
+            .withSuccessHandler((data) => {
+              allQuestions = data || [];
+              updateQuestionStats();
+              showInitialQuestionButton();
+            })
+            .withFailureHandler(showLoadError)
+            .getBookmarkedQuestions(currentSheet);
+        } else {
+          google.script.run
+            .withSuccessHandler((data) => {
+              allQuestions = data || [];
+              updateQuestionStats();
+              showInitialQuestionButton();
+            })
+            .withFailureHandler(showLoadError)
+            .getAllQuestions(currentSheet, genre);
+        }
+      }
+
+      function showInitialQuestionButton() {
+        document.getElementById("questionBox").innerHTML = `
+        <div class="d-grid gap-2">
+          <button class="btn btn-primary btn-lg" onclick="loadQuestion()">
+            <i class="bi bi-play-fill"></i> 問題を取得する
+          </button>
+        </div>`;
+      }
+
+      function updateQuestionStats() {
+        let genre =
+          document.getElementById("genreBar").style.display === "block"
+            ? document.getElementById("genreSelect").value
+            : null;
+        google.script.run
+          .withSuccessHandler((stats) => {
+            questionStats = stats || {};
+          })
+          .withFailureHandler(() => {})
+          .getQuestionStats(currentSheet, genre);
+      }
+
+      function showStats() {
+        google.script.run
+          .withSuccessHandler((stats) => {
+            const keys = Object.keys(stats);
+            if (keys.length === 0) {
+              document.getElementById("stats").innerHTML =
+                '<div class="alert alert-info mb-0">まだ解答履歴がありません。</div>';
+              return;
+            }
+            let html =
+              '<table class="table table-sm table-bordered mb-0"><thead><tr><th>シート</th><th>正答数</th><th>出題数</th><th>正答率</th></tr></thead><tbody>';
+            keys.forEach((s) => {
+              const st = stats[s];
+              const rate = st.total
+                ? ((st.correct / st.total) * 100).toFixed(1)
+                : "0.0";
+              html += `<tr><td>${s}</td><td>${st.correct}</td><td>${st.total}</td><td>${rate}%</td></tr>`;
+            });
+            html += "</tbody></table>";
+            document.getElementById("stats").innerHTML = html;
+          })
+          .withFailureHandler(() => {})
+          .getStats();
+      }
+
+      function loadQuestion() {
+        document.getElementById("result").innerHTML = "";
+        let priority = document.getElementById("prioritySelect").value;
+        let questions = allQuestions.slice();
+
+        if (priority) {
+          const N = 2;
+          const lowRateThreshold = 0.6;
+          if (priority === "mistake") {
+            questions = questions.filter(
+              (q) =>
+                questionStats[q.question] &&
+                questionStats[q.question].wrong >= N
+            );
+          } else if (priority === "unanswered") {
+            questions = questions.filter(
+              (q) =>
+                !questionStats[q.question] ||
+                questionStats[q.question].total === 0
+            );
+          } else if (priority === "lowrate") {
+            questions = questions.filter(
+              (q) =>
+                questionStats[q.question] &&
+                questionStats[q.question].total > 0 &&
+                questionStats[q.question].correct /
+                  questionStats[q.question].total <=
+                  lowRateThreshold
+            );
+          }
+        }
+
+        if (!questions.length) {
+          document.getElementById(
+            "questionBox"
+          ).innerHTML = `<div class="alert alert-warning mb-0">該当する問題がありません。</div>`;
+          return;
+        }
+
+        const idx = Math.floor(Math.random() * questions.length);
+        questionData = questions[idx];
+        document.getElementById("questionBox").innerHTML = `
+        <div class="mb-3">
+          <span class="badge bg-info">${questionData.genre}</span>
+        </div>
+        <div class="card-question d-flex align-items-center justify-content-center p-3">${questionData.question}</div>
+        <div class="d-flex justify-content-center gap-4 mt-4">
+          <button class="btn btn-outline-primary rounded-circle answer-btn fs-1" onclick="answer('○')">○</button>
+          <button class="btn btn-outline-danger rounded-circle answer-btn fs-1" onclick="answer('×')">×</button>
+        </div>`;
+      }
+
+      function answer(ans) {
+        if (!questionData) return;
+        const correctAns = (questionData.answer + "").trim();
+        const correct = ans === correctAns;
+        const stats = questionStats[questionData.question] || {
+          total: 0,
+          correct: 0,
+        };
+        const newTotal = stats.total + 1;
+        const newCorrect = stats.correct + (correct ? 1 : 0);
+        const newRate =
+          newTotal > 0 ? ((newCorrect / newTotal) * 100).toFixed(1) : "0.0";
+
+        document.getElementById("result").innerHTML = `
+        <div class="alert ${correct ? "alert-success" : "alert-danger"}">
+          <h4 class="alert-heading">
+            <i class="bi ${
+              correct ? "bi-check-circle-fill" : "bi-x-circle-fill"
+            }"></i>
+            ${correct ? "正解！" : "不正解…"}
+          </h4>
+          <p class="mb-0">あなたの回答: ${ans} / 正解: ${correctAns}</p>
+          <hr>
+          <p class="mb-0">${questionData.commentary}</p>
+          <p class="text-muted small mt-2 mb-0">根拠条文：${
+            questionData.article || "（なし）"
+          }</p>
+        </div>
+        <div class="card mb-2">
+          <div class="card-body d-flex justify-content-between align-items-center py-2">
+            <div>
+              <strong>この問題の成績：</strong>
+              出題 ${newTotal}回 / 正答 ${newCorrect}回 (正答率 ${newRate}%)
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="addBookmark(this)">
+              <i class="bi bi-bookmark-plus"></i> ブックマーク
+            </button>
+          </div>
+        </div>
+        <div class="d-grid gap-2 mt-3">
+          <button class="btn btn-primary" onclick="loadQuestion()">
+            <i class="bi bi-arrow-right-circle"></i> 次の問題へ
+          </button>
+        </div>`;
+
+        google.script.run
+          .withSuccessHandler(() => {
+            answerCount++;
+            if (answerCount % STATS_UPDATE_INTERVAL === 0) {
+              updateQuestionStats();
+              showStats();
+            }
+          })
+          .withFailureHandler(() => {})
+          .recordHistory(
+            currentSheet,
+            questionData.rowNum,
+            questionData.genre,
+            questionData.question,
+            ans,
+            correct,
+            correctAns,
+            questionData.article
+          );
+        updateQuestionStats();
+      }
+
+      function addBookmark(button) {
+        if (!questionData) return;
+        button.disabled = true;
+        google.script.run
+          .withSuccessHandler((result) => {
+            const toastEl = document.createElement("div");
+            toastEl.style.position = "fixed";
+            toastEl.style.bottom = "1rem";
+            toastEl.style.right = "1rem";
+            toastEl.style.zIndex = "1050";
+            toastEl.innerHTML = `
+            <div class="toast show align-items-center text-white bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+              <div class="d-flex">
+                <div class="toast-body">${
+                  result === "Bookmarked"
+                    ? "ブックマークに追加しました。"
+                    : "すでにブックマーク済みです。"
+                }</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+              </div>
+            </div>`;
+            document.body.appendChild(toastEl);
+            const toast = new bootstrap.Toast(toastEl.querySelector(".toast"));
+            toast.show();
+            setTimeout(() => {
+              toastEl.remove();
+              button.disabled = false;
+            }, 3000);
+          })
+          .withFailureHandler(() => {
+            button.disabled = false;
+          })
+          .addBookmark(currentSheet, questionData.rowNum);
+      }
+    </script>
+  </body>
+</html>

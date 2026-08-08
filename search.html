@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><?= pageTitle ?></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <?!= include('Style'); ?>
+  </head>
+  <body>
+    <?!= include('Header'); ?>
+
+    <main class="app-shell">
+      <div class="card mb-4">
+        <div class="card-body">
+          <div class="input-group">
+            <input
+              type="text"
+              id="keywordInput"
+              class="form-control"
+              placeholder="キーワードを入力（例: 監査委員）"
+            />
+            <button
+              class="btn btn-primary"
+              type="button"
+              id="searchButton"
+              onclick="performSearch()"
+            >
+              <i class="bi bi-search"></i> 検索
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading" class="text-center d-none py-3">
+        <div class="spinner-border" role="status"></div>
+      </div>
+
+      <div id="results-count" class="alert alert-info d-none"></div>
+      <div id="results-list" class="accordion"></div>
+
+      <div class="text-center my-4 footer-actions">
+        <a href="<?= url ?>" class="btn btn-secondary">
+          <i class="bi bi-arrow-left"></i> 問題集へ戻る
+        </a>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      // Enterキーでも検索を実行できるようにする
+      document
+        .getElementById("keywordInput")
+        .addEventListener("keypress", function (event) {
+          if (event.key === "Enter") {
+            performSearch();
+          }
+        });
+
+      function performSearch() {
+        const keyword = document.getElementById("keywordInput").value;
+        if (!keyword || keyword.trim() === "") {
+          alert("キーワードを入力してください。");
+          return;
+        }
+
+        // ローディング表示
+        document.getElementById("loading").classList.remove("d-none");
+        document.getElementById("searchButton").disabled = true;
+        document.getElementById("results-list").innerHTML = "";
+        document.getElementById("results-count").classList.add("d-none");
+
+        google.script.run
+          .withSuccessHandler(displayResults)
+          .withFailureHandler(displayError)
+          .searchQuestions(keyword);
+      }
+
+      function displayError(error) {
+        document.getElementById("loading").classList.add("d-none");
+        document.getElementById("searchButton").disabled = false;
+        document.getElementById(
+          "results-list"
+        ).innerHTML = `<div class="alert alert-danger">検索に失敗しました：${error.message}</div>`;
+      }
+
+      function displayResults(results) {
+        // ローディング非表示
+        document.getElementById("loading").classList.add("d-none");
+        document.getElementById("searchButton").disabled = false;
+
+        const countEl = document.getElementById("results-count");
+        const listEl = document.getElementById("results-list");
+
+        countEl.textContent = `${results.length}件の問題が見つかりました。`;
+        countEl.classList.remove("d-none");
+
+        if (results.length === 0) {
+          listEl.innerHTML =
+            '<div class="alert alert-warning">該当する問題が見つかりませんでした。</div>';
+          return;
+        }
+
+        let html = "";
+        results.forEach((item, index) => {
+          const uniqueId = "item-" + index;
+          html += `
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${uniqueId}">
+                <span class="badge bg-secondary me-2">${item.sheetName}</span>
+                ${item.question}
+              </button>
+            </h2>
+            <div id="collapse-${uniqueId}" class="accordion-collapse collapse" data-bs-parent="#results-list">
+              <div class="accordion-body">
+                <p><strong>正解： ${item.answer}</strong></p>
+                <p><strong>解説：</strong><br>${item.commentary}</p>
+                <p class="text-muted small mb-0">根拠条文： ${
+                  item.article || "（なし）"
+                }</p>
+              </div>
+            </div>
+          </div>`;
+        });
+        listEl.innerHTML = html;
+      }
+    </script>
+  </body>
+</html>

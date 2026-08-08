@@ -1,0 +1,30 @@
+<header class="app-header">
+  <div class="app-header-inner">
+    <p class="app-title">
+      <i class="bi bi-mortarboard-fill"></i>
+      <?= pageTitle ?>
+    </p>
+    <nav class="app-nav">
+      <a
+        href="<?= url ?>"
+        title="問題集トップ"
+        class="<?= activePage === 'index' ? 'active' : '' ?>"
+      ><i class="bi bi-house-fill"></i></a>
+      <a
+        href="<?= url ?>?page=search"
+        title="問題を検索"
+        class="<?= activePage === 'search' ? 'active' : '' ?>"
+      ><i class="bi bi-search"></i></a>
+      <a
+        href="<?= url ?>?page=stats"
+        title="学習統計"
+        class="<?= activePage === 'stats' ? 'active' : '' ?>"
+      ><i class="bi bi-graph-up"></i></a>
+      <a
+        href="<?= url ?>?page=bookmarks"
+        title="ブックマーク一覧"
+        class="<?= activePage === 'bookmarks' ? 'active' : '' ?>"
+      ><i class="bi bi-bookmarks-fill"></i></a>
+    </nav>
+  </div>
+</header>

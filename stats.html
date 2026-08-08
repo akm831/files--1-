@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><?= pageTitle ?></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <?!= include('Style'); ?>
+  </head>
+  <body>
+    <?!= include('Header'); ?>
+
+    <main class="app-shell">
+      <div class="card mb-4">
+        <div class="card-body">
+          <label for="sheetSelect" class="form-label">表示するシートを選択</label>
+          <select id="sheetSelect" class="form-select"></select>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <i class="bi bi-pie-chart"></i> ジャンル別 正答率
+        </div>
+        <div class="card-body">
+          <canvas id="genreChart"></canvas>
+          <div id="genreEmpty" class="alert alert-info d-none mb-0 mt-2">
+            この条件の解答履歴がまだありません。
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">
+          <i class="bi bi-exclamation-triangle"></i> 苦手問題（誤答率の高い問題 TOP3）
+        </div>
+        <div class="card-body">
+          <div id="worstProblems"></div>
+        </div>
+      </div>
+
+      <div class="text-center my-5 footer-actions">
+        <a href="<?= url ?>" class="btn btn-primary btn-lg">
+          <i class="bi bi-house-fill"></i> 問題集へ戻る
+        </a>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      let currentSheet = null;
+      let chart = null;
+
+      // ダークUIに合わせたChart.jsの既定色
+      Chart.defaults.color = "#a6b0c0";
+      Chart.defaults.borderColor = "#333d4d";
+
+      window.onload = function () {
+        google.script.run
+          .withSuccessHandler(function (sheetNames) {
+            const sel = document.getElementById("sheetSelect");
+            sel.innerHTML = "";
+            sheetNames.forEach(function (name) {
+              const opt = document.createElement("option");
+              opt.value = name;
+              opt.textContent = name;
+              sel.appendChild(opt);
+            });
+            currentSheet = sel.value;
+            sel.onchange = function () {
+              currentSheet = sel.value;
+              showGenreChart();
+              showWorstProblems();
+            };
+            showGenreChart();
+            showWorstProblems();
+          })
+          .withFailureHandler(showLoadError)
+          .getSheetNames();
+      };
+
+      function showLoadError(error) {
+        document.getElementById(
+          "worstProblems"
+        ).innerHTML = `<div class="alert alert-danger mb-0">読み込みに失敗しました：${error.message}</div>`;
+      }
+
+      function showGenreChart() {
+        google.script.run
+          .withSuccessHandler(function (stats) {
+            const ctx = document.getElementById("genreChart").getContext("2d");
+            const labels = Object.keys(stats);
+            const emptyEl = document.getElementById("genreEmpty");
+
+            if (labels.length === 0) {
+              if (chart) {
+                chart.destroy();
+                chart = null;
+              }
+              emptyEl.classList.remove("d-none");
+              return;
+            }
+            emptyEl.classList.add("d-none");
+
+            const data = labels.map((g) =>
+              stats[g].total ? (stats[g].correct / stats[g].total) * 100 : 0
+            );
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+              type: "bar",
+              data: {
+                labels: labels,
+                datasets: [
+                  {
+                    label: "正答率 (%)",
+                    data: data,
+                    backgroundColor: "rgba(91, 141, 239, 0.65)",
+                    borderColor: "rgba(91, 141, 239, 1)",
+                    borderWidth: 1,
+                    borderRadius: 6,
+                  },
+                ],
+              },
+              options: {
+                indexAxis: "y",
+                responsive: true,
+                scales: {
+                  x: {
+                    beginAtZero: true,
+                    max: 100,
+                    grid: { color: "#333d4d" },
+                  },
+                  y: {
+                    grid: { color: "#333d4d" },
+                  },
+                },
+                plugins: { legend: { display: false } },
+              },
+            });
+          })
+          .withFailureHandler(showLoadError)
+          .getGenreStats(currentSheet);
+      }
+
+      function showWorstProblems() {
+        google.script.run
+          .withSuccessHandler(function (list) {
+            let html = "";
+            if (list.length === 0) {
+              document.getElementById("worstProblems").innerHTML =
+                '<div class="alert alert-info mb-0">該当する問題はありません。</div>';
+              return;
+            }
+            list.forEach((item) => {
+              const rate = ((item.wrong / item.total) * 100).toFixed(1);
+              html += `
+              <div class="list-group-item">
+                <p class="mb-1"><strong>問題:</strong> ${item.question}</p>
+                <p class="mb-1"><strong>正解:</strong> ${item.answer}</p>
+                <p class="text-muted small mb-0">${item.commentary}</p>
+                <div class="text-end mt-2">
+                  <span class="badge bg-danger">誤答率: ${rate}%</span>
+                </div>
+              </div>`;
+            });
+            document.getElementById("worstProblems").innerHTML = html;
+          })
+          .withFailureHandler(showLoadError)
+          .getWorstQuestions(currentSheet, null, 3);
+      }
+    </script>
+  </body>
+</html>
